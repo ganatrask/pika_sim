@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MuJoCo model for Pika Sensor Head (dual-gripper data collection device)
+  Converted from pika_sensor_description URDF (master branch)
+
+  The Pika sensor head has a single actuated revolute joint (center_joint)
+  that drives all other joints via mechanical coupling (mimic joints).
+
+  Control: Position control on center_joint (-0.5 to 1.2 rad)
+  All other joints follow via equality constraints.
+-->
+<mujoco model="pika_sensor">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <default>
+    <joint damping="0.5" armature="0.01"/>
+    <geom type="mesh" rgba="0.79 0.82 0.93 1" contype="1" conaffinity="1"/>
+    <motor ctrllimited="true"/>
+  </default>
+
+  <asset>
+    <!-- Sensor head meshes -->
+    <mesh name="base_link" file="base_link.stl"/>
+    <mesh name="center_link" file="center_link.stl"/>
+    <mesh name="left_link1" file="left_link1.stl"/>
+    <mesh name="left_link2" file="left_link2.stl"/>
+    <mesh name="left_hand_link" file="left_hand_link.stl"/>
+    <mesh name="left_gripper_add_1" file="left_gripper_add_1.stl"/>
+    <mesh name="left_gripper_add_2" file="left_gripper_add_2.stl"/>
+    <mesh name="right_link1" file="right_link1.stl"/>
+    <mesh name="right_link2" file="right_link2.stl"/>
+    <mesh name="right_hand_link" file="right_hand_link.stl"/>
+    <mesh name="right_gripper_add_1" file="right_gripper_add_1.stl"/>
+    <mesh name="right_gripper_add_2" file="right_gripper_add_2.stl"/>
+
+    <!-- Ground texture -->
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" type="plane" size="1 1 0.1" material="groundplane"/>
+    <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="0.5 0.5 1" dir="-0.5 -0.5 -1" diffuse="0.4 0.4 0.4"/>
+
+    <!-- Base link - fixed to world (mounted on stand for visualization) -->
+    <body name="base_link" pos="0 0 0.3">
+      <inertial pos="-0.0526 0 0.0623" mass="0.15718"
+                diaginertia="0.000178 0.000117 0.0000954"/>
+      <geom name="base_link_visual" type="mesh" mesh="base_link"/>
+      <geom name="base_link_collision" type="mesh" mesh="base_link" contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+
+      <!-- Center joint - PRIMARY ACTUATED JOINT -->
+      <body name="center_link" pos="0 0 0">
+        <inertial pos="-0.00945 0 0" mass="0.00647"
+                  diaginertia="0.00000195 0.0000017 0.00000105"/>
+        <joint name="center_joint" type="hinge" axis="1 0 0" range="-0.5 1.2"/>
+        <geom name="center_link_visual" type="mesh" mesh="center_link"/>
+
+        <!-- Left link 1 (mimic: center_joint * -1.0) -->
+        <body name="left_link1" pos="0 0.0071865 0.014295">
+          <inertial pos="0.00183 0.00944 -0.000598" mass="0.000816"
+                    diaginertia="0.0000000624 0.00000000875 0.0000000557"/>
+          <joint name="jeft_joint1" type="hinge" axis="1 0 0" range="-3.1416 3.1416"/>
+          <geom name="left_link1_visual" type="mesh" mesh="left_link1"/>
+        </body>
+
+        <!-- Left link 2 (mimic: center_joint * -1.0) -->
+        <body name="left_link2" pos="0 0.014597 0.029037">
+          <inertial pos="-0.00505 0.0336 -0.00866" mass="0.0024"
+                    diaginertia="0.000001 0.000000101 0.000000938"/>
+          <joint name="left_joint2" type="hinge" axis="1 0 0" range="-3.1416 3.1416"/>
+          <geom name="left_link2_visual" type="mesh" mesh="left_link2"/>
+        </body>
+
+        <!-- Right link 1 (mimic: center_joint * -1.0) -->
+        <body name="right_link1" pos="0 -0.0071865 -0.014295">
+          <inertial pos="0.00183 -0.00944 0.000598" mass="0.000816"
+                    diaginertia="0.0000000624 0.00000000875 0.0000000557"/>
+          <joint name="right_joint1" type="hinge" axis="1 0 0" range="-3.1416 3.1416"/>
+          <geom name="right_link1_visual" type="mesh" mesh="right_link1"/>
+        </body>
+
+        <!-- Right link 2 (mimic: center_joint * -1.0) -->
+        <body name="right_link2" pos="-0.005 -0.014597 -0.029037">
+          <inertial pos="-0.0000494 -0.0336 0.00866" mass="0.0024"
+                    diaginertia="0.000001 0.000000101 0.000000938"/>
+          <joint name="right_joint2" type="hinge" axis="1 0 0" range="-3.1416 3.1416"/>
+          <geom name="right_link2_visual" type="mesh" mesh="right_link2"/>
+        </body>
+      </body>
+
+      <!-- Left gripper add 1 (prismatic, mimic: center_joint * -0.015) -->
+      <body name="left_gripper_add_1" pos="0 0.027646 0.013">
+        <inertial pos="0.01174 0.00614 -0.01468" mass="0.00848"
+                  diaginertia="0.00000147 0.00000124 0.000000425"/>
+        <joint name="left_gripper_add_joint1" type="slide" axis="0 1 0" range="-0.1 0.1"/>
+        <geom name="left_gripper_add_1_visual" type="mesh" mesh="left_gripper_add_1"/>
+
+        <!-- Left hand link (mimic: center_joint * -0.12) -->
+        <body name="left_hand_link" pos="0.0175 0.008 -0.0315">
+          <inertial pos="-0.01069 -0.01256 -0.05793" mass="0.03128"
+                    diaginertia="0.0000288 0.0000277 0.00000274"/>
+          <joint name="left_hand_joint" type="hinge" axis="-1 0 0" range="-3.1416 3.1416"/>
+          <geom name="left_hand_link_visual" type="mesh" mesh="left_hand_link"/>
+        </body>
+      </body>
+
+      <!-- Left gripper add 2 (prismatic, mimic: center_joint * -0.032) -->
+      <body name="left_gripper_add_2" pos="-0.0033 0.070761 0.014557">
+        <inertial pos="0.04303 -0.00554 -0.0145" mass="0.03421"
+                  diaginertia="0.0000353 0.0000155 0.0000408"/>
+        <joint name="left_gripper_add_joint2" type="slide" axis="0 1 0" range="-0.1 0.1"/>
+        <geom name="left_gripper_add_2_visual" type="mesh" mesh="left_gripper_add_2"/>
+      </body>
+
+      <!-- Right gripper add 1 (prismatic, mimic: center_joint * 0.015) -->
+      <body name="right_gripper_add_1" pos="0 -0.027646 -0.013">
+        <inertial pos="0.01186 -0.00621 0.01038" mass="0.00831"
+                  diaginertia="0.00000141 0.00000117 0.000000412"/>
+        <joint name="right_gripper_add_joint1" type="slide" axis="0 1 0" range="-0.1 0.1"/>
+        <geom name="right_gripper_add_1_visual" type="mesh" mesh="right_gripper_add_1"/>
+
+        <!-- Right hand link (mimic: center_joint * 0.12) -->
+        <body name="right_hand_link" pos="0.0175 -0.008 -0.0055">
+          <inertial pos="-0.0103 0.01296 -0.05747" mass="0.02099"
+                    diaginertia="0.0000242 0.0000231 0.0000024"/>
+          <joint name="right_hand_joint" type="hinge" axis="-1 0 0" range="-3.1416 3.1416"/>
+          <geom name="right_hand_link_visual" type="mesh" mesh="right_hand_link"/>
+        </body>
+      </body>
+
+      <!-- Right gripper add 2 (prismatic, mimic: center_joint * 0.032) -->
+      <body name="right_gripper_add_2" pos="-0.0033 -0.070761 -0.014557">
+        <inertial pos="0.04303 0.00703 0.0145" mass="0.03421"
+                  diaginertia="0.0000353 0.0000155 0.0000408"/>
+        <joint name="right_gripper_add_joint2" type="slide" axis="0 1 0" range="-0.1 0.1"/>
+        <geom name="right_gripper_add_2_visual" type="mesh" mesh="right_gripper_add_2"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Equality constraints to replicate URDF mimic joints -->
+  <equality>
+    <!-- Revolute mimic joints (multiplier = -1.0) -->
+    <joint joint1="jeft_joint1" joint2="center_joint" polycoef="0 -1 0 0 0"/>
+    <joint joint1="left_joint2" joint2="center_joint" polycoef="0 -1 0 0 0"/>
+    <joint joint1="right_joint1" joint2="center_joint" polycoef="0 -1 0 0 0"/>
+    <joint joint1="right_joint2" joint2="center_joint" polycoef="0 -1 0 0 0"/>
+
+    <!-- Prismatic mimic joints -->
+    <joint joint1="left_gripper_add_joint1" joint2="center_joint" polycoef="0 -0.015 0 0 0"/>
+    <joint joint1="left_gripper_add_joint2" joint2="center_joint" polycoef="0 -0.032 0 0 0"/>
+    <joint joint1="right_gripper_add_joint1" joint2="center_joint" polycoef="0 0.015 0 0 0"/>
+    <joint joint1="right_gripper_add_joint2" joint2="center_joint" polycoef="0 0.032 0 0 0"/>
+
+    <!-- Hand joints (revolute mimic) -->
+    <joint joint1="left_hand_joint" joint2="center_joint" polycoef="0 -0.12 0 0 0"/>
+    <joint joint1="right_hand_joint" joint2="center_joint" polycoef="0 0.12 0 0 0"/>
+  </equality>
+
+  <!-- Single actuator drives the entire mechanism -->
+  <actuator>
+    <!-- Position control (MIT mode equivalent) -->
+    <position name="center_joint_pos" joint="center_joint"
+              kp="50" ctrlrange="-0.5 1.2" forcerange="-10 10"/>
+    <!-- Velocity control -->
+    <velocity name="center_joint_vel" joint="center_joint"
+              kv="5" ctrlrange="-2 2" forcerange="-10 10"/>
+  </actuator>
+
+  <!-- Sensors -->
+  <sensor>
+    <jointpos name="center_joint_pos_sensor" joint="center_joint"/>
+    <jointvel name="center_joint_vel_sensor" joint="center_joint"/>
+    <actuatorfrc name="center_joint_force_sensor" actuator="center_joint_pos"/>
+  </sensor>
+</mujoco>

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MuJoCo model for Pika Gripper (parallel jaw gripper)
+  Converted from pika_gripper_description URDF (master branch)
+
+  The gripper has 2 prismatic joints (left and right) that move symmetrically.
+  A single actuator drives one joint, the other follows via equality constraint.
+
+  Control: Position control on gripper opening (0 to 0.05 m per side = 0.1 m total stroke)
+-->
+<mujoco model="pika_gripper">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <default>
+    <joint damping="0.5" armature="0.01"/>
+    <geom type="mesh" rgba="1 1 1 1" contype="1" conaffinity="1"/>
+    <motor ctrllimited="true"/>
+  </default>
+
+  <asset>
+    <mesh name="gripper_base_link" file="gripper_base_link.stl"/>
+    <mesh name="gripper_left_link" file="gripper_left_link.stl"/>
+    <mesh name="gripper_right_link" file="gripper_right_link.stl"/>
+
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="1 1 0.1" material="groundplane"/>
+    <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="0.3 0.3 0.8" dir="-0.3 -0.3 -1" diffuse="0.4 0.4 0.4"/>
+
+    <!-- Gripper base - mounted on stand -->
+    <body name="gripper_base_link" pos="0 0 0.3" euler="0 1.5708 0">
+      <inertial pos="0.037477 0 0.0084053" mass="0.18972"
+                diaginertia="0.0002159 0.00014308 0.00011036"/>
+      <geom name="gripper_base_visual" type="mesh" mesh="gripper_base_link"/>
+
+      <!-- Left finger (prismatic, Y-axis, range -0.05 to 0) -->
+      <body name="gripper_left_link" pos="0.0815 0.08851 0.0064182">
+        <inertial pos="0.033255 -0.014661 -0.005761" mass="0.033674"
+                  diaginertia="0.0000395 0.0000345 0.0000153"/>
+        <joint name="gripper_left_joint" type="slide" axis="0 1 0" range="-0.05 0"/>
+        <geom name="gripper_left_visual" type="mesh" mesh="gripper_left_link"/>
+      </body>
+
+      <!-- Right finger (prismatic, Y-axis, range 0 to 0.05) -->
+      <body name="gripper_right_link" pos="0.0815 -0.088529 0.0064182">
+        <inertial pos="0.033255 0.014661 -0.005811" mass="0.033674"
+                  diaginertia="0.0000395 0.0000345 0.0000153"/>
+        <joint name="gripper_right_joint" type="slide" axis="0 1 0" range="0 0.05"/>
+        <geom name="gripper_right_visual" type="mesh" mesh="gripper_right_link"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Symmetric coupling: right mirrors left -->
+  <equality>
+    <joint joint1="gripper_right_joint" joint2="gripper_left_joint" polycoef="0 -1 0 0 0"/>
+  </equality>
+
+  <!-- Single actuator for gripper opening -->
+  <actuator>
+    <!-- Position control: command desired opening (0 = closed, -0.05 = fully open) -->
+    <position name="gripper_pos" joint="gripper_left_joint"
+              kp="100" ctrlrange="-0.05 0" forcerange="-10 10"/>
+  </actuator>
+
+  <!-- Sensors -->
+  <sensor>
+    <jointpos name="gripper_left_pos" joint="gripper_left_joint"/>
+    <jointpos name="gripper_right_pos" joint="gripper_right_joint"/>
+    <actuatorfrc name="gripper_force" actuator="gripper_pos"/>
+  </sensor>
+</mujoco>
