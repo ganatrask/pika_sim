@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MuJoCo Pick-and-Place: Trossen WXAI Gripper (STL meshes)
+  Gripper (link_6 + carriages + jaws) mounted on 3-DOF Cartesian gantry,
+  picking up a 2cm cube.
+
+  Based on the Pika gripper pickplace setup, adapted for Trossen gripper geometry.
+
+  Gripper convention:
+    joint = 0.0   → closed (~4mm gap)
+    joint = 0.044 → fully open (~88mm gap)
+
+  Collision filtering (contype/conaffinity bit mask):
+    - Bit 1: gripper pads/tips ↔ cube
+    - Bit 2: table/floor ↔ gripper base, table/floor ↔ cube
+    Gripper pads (bit 1 only) pass through the table so they can reach the cube.
+-->
+<mujoco model="trossen_gripper_pickplace">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.001" cone="elliptic" impratio="10"/>
+
+  <default>
+    <joint damping="0.5" armature="0.001"/>
+    <geom contype="1" conaffinity="1" friction="1.5 0.005 0.0001" solref="0.008 1" solimp="0.95 0.99 0.001"/>
+  </default>
+
+  <asset>
+    <mesh name="link_6" file="link_6.stl"/>
+    <mesh name="carriage_right" file="carriage_right.stl"/>
+    <mesh name="carriage_left" file="carriage_left.stl"/>
+    <mesh name="gripper_right" file="gripper_right.stl"/>
+    <mesh name="gripper_left" file="gripper_left.stl"/>
+    <mesh name="camera_mount_d405" file="camera_mount_d405.stl"/>
+
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.05 0.05 0.1" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.25 0.26 0.25" rgb2="0.18 0.18 0.18" markrgb="0.5 0.5 0.5" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="8 8" reflectance="0.1"/>
+    <material name="cube_mat" rgba="0.9 0.15 0.15 1" specular="0.5" shininess="0.3"/>
+    <material name="target_mat" rgba="0.2 0.9 0.2 0.3" specular="0.1"/>
+    <material name="trossen_black" rgba="0.1 0.1 0.1 1" specular="0.2" shininess="0.3"/>
+    <material name="gantry_mat" rgba="0.4 0.4 0.45 1" specular="0.2"/>
+  </asset>
+
+  <worldbody>
+    <!-- Ground and table: bit 2 only (collide with cube and gripper base, NOT gripper pads) -->
+    <geom name="floor" type="plane" size="1 1 0.01" material="groundplane"
+          contype="2" conaffinity="2"/>
+    <body name="table" pos="0 0 0.2">
+      <geom name="table_top" type="box" size="0.3 0.2 0.01" rgba="0.55 0.45 0.35 1" mass="50"
+            contype="2" conaffinity="2"/>
+    </body>
+
+    <!-- Lighting -->
+    <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.9 0.9 0.9" specular="0.3 0.3 0.3"/>
+    <light pos="0.5 -0.4 1.0" dir="-0.4 0.3 -1" diffuse="0.3 0.3 0.3"/>
+
+    <!-- Fixed scene cameras -->
+    <camera name="overhead" pos="0 0 0.8" euler="0 0 0" fovy="60" resolution="640 480"/>
+    <camera name="front" pos="0.4 -0.2 0.4" xyaxes="0.4 1 0 -0.2 0 1" fovy="50" resolution="640 480"/>
+
+    <!-- Target placement zone (visual only) -->
+    <body name="target_zone" pos="0.12 0 0.211">
+      <geom name="target" type="cylinder" size="0.025 0.001" material="target_mat" contype="0" conaffinity="0"/>
+    </body>
+
+    <!-- 2cm cube: collides with table AND gripper pads -->
+    <body name="cube" pos="-0.10 0 0.22">
+      <joint name="cube_free" type="free"/>
+      <inertial pos="0 0 0" mass="0.03" diaginertia="2e-7 2e-7 2e-7"/>
+      <geom name="cube_geom" type="box" size="0.01 0.01 0.01" material="cube_mat"
+            friction="5.0 0.05 0.01" solref="0.008 1"
+            contype="3" conaffinity="3"/>
+    </body>
+
+    <!-- 3-DOF Cartesian Gantry -->
+    <body name="gantry_x" pos="0 0 0.75">
+      <joint name="slide_x" type="slide" axis="1 0 0" range="-0.25 0.25" damping="50" armature="0.05"/>
+      <inertial pos="0 0 0" mass="0.5" diaginertia="1e-4 1e-4 1e-4"/>
+
+      <body name="gantry_y">
+        <joint name="slide_y" type="slide" axis="0 1 0" range="-0.15 0.15" damping="50" armature="0.05"/>
+        <inertial pos="0 0 0" mass="0.3" diaginertia="1e-4 1e-4 1e-4"/>
+
+        <body name="gantry_z">
+          <joint name="slide_z" type="slide" axis="0 0 1" range="-0.4 0" damping="50" armature="0.05"/>
+          <inertial pos="0 0 0" mass="0.3" diaginertia="1e-4 1e-4 1e-4"/>
+
+          <!-- Trossen Gripper (link_6 + carriages + jaws)
+               Rotated: local +X → world -Z (pointing down toward table)
+               link_6 gripper tips at ~X=0.149 → world -Z offset ~0.149 from this body
+               Mounting offset chosen so GRASP_Z=-0.31 reaches cube at Z=0.22 -->
+          <body name="gripper_base" pos="0 0 -0.1" euler="0 1.5708 0">
+            <inertial pos="0.0457277 -7.26e-06 1.402e-05" mass="0.554693"
+                      diaginertia="0.001086 0.000824291 0.000487589"/>
+
+            <!-- IMU sensor site -->
+            <site name="imu_site" pos="0.0457 0 0" size="0.005"/>
+
+            <!-- link_6 visual (no collision on mesh — it extends too far) -->
+            <geom name="link_6_vis" type="mesh" mesh="link_6" material="trossen_black"
+                  contype="0" conaffinity="0"/>
+            <!-- link_6 collision box (bit 2: collides with table/floor only) -->
+            <geom name="link_6_col" type="box" size="0.0125 0.094 0.031" pos="0.0685 0 0"
+                  contype="2" conaffinity="2" rgba="0 0 0 0" group="3"/>
+
+            <!-- Camera mount (visual only, no collision) -->
+            <geom name="camera_mount_vis" type="mesh" mesh="camera_mount_d405" pos="0.012 0 0"
+                  material="trossen_black" contype="0" conaffinity="0"/>
+            <geom name="camera_mount_col" type="box" size="0.0155 0.025 0.025"
+                  pos="0.0513206 0 0.0569399" quat="0.984808 0 0.173648 0"
+                  contype="2" conaffinity="2" rgba="0 0 0 0" group="3"/>
+
+            <!-- ===== CAMERAS ===== -->
+            <!-- Wrist camera: D405 on camera mount, looking down at workspace
+                 Position and orientation from Trossen stationary_ai.xml
+                 Gripper local +X = world -Z (down), local +Z = world +X (forward) -->
+            <camera name="realsense_d405" pos="0.05864 0.009 0.05427"
+                    quat="0.5793 0.4056 -0.4056 -0.5793" mode="fixed"
+                    fovy="87" resolution="640 480"/>
+
+            <!-- Stereo cameras approximated from D405 mount position -->
+            <camera name="color_left" pos="0.05864 0.015 0.05427"
+                    quat="0.5793 0.4056 -0.4056 -0.5793" mode="fixed"
+                    fovy="87" resolution="640 480"/>
+            <camera name="color_right" pos="0.05864 -0.006 0.05427"
+                    quat="0.5793 0.4056 -0.4056 -0.5793" mode="fixed"
+                    fovy="87" resolution="640 480"/>
+
+            <!-- Right carriage + gripper jaw -->
+            <body name="carriage_right" pos="0.0865 -0.023 0">
+              <inertial pos="0.00169015 0.00592793 0.00201817"
+                        quat="-0.370973 0.740886 -0.0847721 0.553427" mass="0.081271"
+                        diaginertia="4.29565e-05 3.87081e-05 2.21528e-05"/>
+              <joint name="right_carriage_joint" type="slide" axis="0 -1 0" range="0 0.044"
+                     armature="0.1" frictionloss="0.1"/>
+              <geom name="carriage_right_vis" type="mesh" mesh="carriage_right" material="trossen_black"
+                    contype="0" conaffinity="0"/>
+              <geom name="gripper_right_vis" type="mesh" mesh="gripper_right" material="trossen_black"
+                    contype="0" conaffinity="0"/>
+              <!-- Collision: upper pad, lower pad, tip -->
+              <geom name="gripper_right_pad_upper" type="box" size="0.0275 0.005 0.01"
+                    pos="0.0286 0.01436 0.0037" quat="0.99257 -0.00451 0.10246 0.06547"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+              <geom name="gripper_right_pad_lower" type="box" size="0.0275 0.005 0.01"
+                    pos="0.0285 0.01429 -0.00973" quat="0.98344 0.0133 -0.16893 0.06427"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+              <geom name="gripper_right_tip" type="box" size="0.00732 0.00214 0.00767"
+                    pos="0.0622 0.02083 -0.00105"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+            </body>
+
+            <!-- Left carriage + gripper jaw -->
+            <body name="carriage_left" pos="0.0865 0.023 0">
+              <inertial pos="0.00169017 -0.00592796 -0.00365701"
+                        quat="-0.0382691 0.628022 -0.255101 0.734198" mass="0.081271"
+                        diaginertia="4.21112e-05 3.61943e-05 2.40003e-05"/>
+              <joint name="left_carriage_joint" type="slide" axis="0 1 0" range="0 0.044"
+                     armature="0.1" frictionloss="0.1"/>
+              <geom name="carriage_left_vis" type="mesh" mesh="carriage_left" material="trossen_black"
+                    contype="0" conaffinity="0"/>
+              <geom name="gripper_left_vis" type="mesh" mesh="gripper_left" material="trossen_black"
+                    contype="0" conaffinity="0"/>
+              <!-- Collision: upper pad, lower pad, tip -->
+              <geom name="gripper_left_pad_upper" type="box" size="0.0275 0.005 0.01"
+                    pos="0.0286 -0.01436 0.0037" quat="0.99257 0.00451 0.10246 -0.06547"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+              <geom name="gripper_left_pad_lower" type="box" size="0.0275 0.005 0.01"
+                    pos="0.0285 -0.01429 -0.00973" quat="0.98344 -0.0133 -0.16893 -0.06427"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+              <geom name="gripper_left_tip" type="box" size="0.00732 0.00214 0.00767"
+                    pos="0.0622 -0.02083 -0.00105"
+                    contype="1" conaffinity="1" rgba="0 0 0 0" group="3"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Symmetric coupling: both carriages move together -->
+  <equality>
+    <joint joint1="right_carriage_joint" joint2="left_carriage_joint" polycoef="0 1 0 0 0"/>
+  </equality>
+
+  <!-- Actuators -->
+  <actuator>
+    <position name="x_pos" joint="slide_x" kp="5000" ctrllimited="true" ctrlrange="-0.25 0.25"
+              forcelimited="true" forcerange="-50 50"/>
+    <position name="y_pos" joint="slide_y" kp="5000" ctrllimited="true" ctrlrange="-0.15 0.15"
+              forcelimited="true" forcerange="-50 50"/>
+    <position name="z_pos" joint="slide_z" kp="5000" ctrllimited="true" ctrlrange="-0.4 0"
+              forcelimited="true" forcerange="-50 50"/>
+    <position name="gripper_pos" joint="left_carriage_joint" kp="100" kv="10"
+              ctrllimited="true" ctrlrange="0 0.044"
+              forcelimited="true" forcerange="-400 400"/>
+  </actuator>
+
+  <!-- Sensors -->
+  <sensor>
+    <!-- Joint position sensors -->
+    <jointpos name="x_sensor" joint="slide_x"/>
+    <jointpos name="y_sensor" joint="slide_y"/>
+    <jointpos name="z_sensor" joint="slide_z"/>
+    <jointpos name="gripper_sensor" joint="left_carriage_joint"/>
+
+    <!-- Joint velocity sensors -->
+    <jointvel name="x_vel_sensor" joint="slide_x"/>
+    <jointvel name="y_vel_sensor" joint="slide_y"/>
+    <jointvel name="z_vel_sensor" joint="slide_z"/>
+    <jointvel name="gripper_vel_sensor" joint="left_carriage_joint"/>
+
+    <!-- Actuator force sensors -->
+    <actuatorfrc name="x_force_sensor" actuator="x_pos"/>
+    <actuatorfrc name="y_force_sensor" actuator="y_pos"/>
+    <actuatorfrc name="z_force_sensor" actuator="z_pos"/>
+    <actuatorfrc name="gripper_force_sensor" actuator="gripper_pos"/>
+
+    <!-- IMU on gripper base -->
+    <accelerometer name="imu_accel" site="imu_site" noise="0.01"/>
+    <gyro name="imu_gyro" site="imu_site" noise="0.001"/>
+    <framequat name="imu_orientation" objtype="site" objname="imu_site"/>
+
+    <!-- Object tracking -->
+    <framepos name="cube_pos" objtype="body" objname="cube"/>
+  </sensor>
+</mujoco>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Standalone Trossen WXAI Gripper for testing and visualization.
+  Just the gripper (link_6 + carriages + jaws), no gantry or environment.
+
+  Gripper convention:
+    joint = 0.0   → closed
+    joint = 0.044 → fully open (~88mm gap)
+-->
+<mujoco model="trossen_gripper">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <default>
+    <joint damping="0.5" armature="0.001"/>
+    <geom contype="1" conaffinity="1"/>
+  </default>
+
+  <asset>
+    <mesh name="link_6" file="link_6.stl"/>
+    <mesh name="carriage_right" file="carriage_right.stl"/>
+    <mesh name="carriage_left" file="carriage_left.stl"/>
+    <mesh name="gripper_right" file="gripper_right.stl"/>
+    <mesh name="gripper_left" file="gripper_left.stl"/>
+    <mesh name="camera_mount_d405" file="camera_mount_d405.stl"/>
+
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.05 0.05 0.1" width="512" height="3072"/>
+    <material name="trossen_black" rgba="0.1 0.1 0.1 1" specular="0.2" shininess="0.3"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 0.5" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="0.3 -0.2 0.4" dir="-0.3 0.2 -0.5" diffuse="0.3 0.3 0.3"/>
+
+    <body name="gripper_base" pos="0 0 0.15">
+      <inertial pos="0.0457277 -7.26e-06 1.402e-05" mass="0.554693"
+                diaginertia="0.001086 0.000824291 0.000487589"/>
+      <geom type="mesh" mesh="link_6" material="trossen_black"/>
+      <geom type="mesh" mesh="camera_mount_d405" pos="0.012 0 0" material="trossen_black"
+            contype="0" conaffinity="0"/>
+
+      <body name="carriage_right" pos="0.0865 -0.023 0">
+        <inertial pos="0.00169015 0.00592793 0.00201817"
+                  quat="-0.370973 0.740886 -0.0847721 0.553427" mass="0.081271"
+                  diaginertia="4.29565e-05 3.87081e-05 2.21528e-05"/>
+        <joint name="right_carriage_joint" type="slide" axis="0 -1 0" range="0 0.044"
+               armature="0.1" frictionloss="0.1"/>
+        <geom type="mesh" mesh="carriage_right" material="trossen_black"/>
+        <geom type="mesh" mesh="gripper_right" material="trossen_black"/>
+      </body>
+
+      <body name="carriage_left" pos="0.0865 0.023 0">
+        <inertial pos="0.00169017 -0.00592796 -0.00365701"
+                  quat="-0.0382691 0.628022 -0.255101 0.734198" mass="0.081271"
+                  diaginertia="4.21112e-05 3.61943e-05 2.40003e-05"/>
+        <joint name="left_carriage_joint" type="slide" axis="0 1 0" range="0 0.044"
+               armature="0.1" frictionloss="0.1"/>
+        <geom type="mesh" mesh="carriage_left" material="trossen_black"/>
+        <geom type="mesh" mesh="gripper_left" material="trossen_black"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <joint joint1="right_carriage_joint" joint2="left_carriage_joint" polycoef="0 1 0 0 0"/>
+  </equality>
+
+  <actuator>
+    <position name="gripper_pos" joint="left_carriage_joint" kp="100" kv="10"
+              ctrlrange="0 0.044" forcerange="-400 400"/>
+  </actuator>
+</mujoco>

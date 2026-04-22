@@ -2,7 +2,7 @@
 
 MuJoCo simulation environment for the [Pika](https://github.com/agilexrobotics) gripper and sensor head. Includes a 3-DOF Cartesian pick-and-place demo with randomized object poses, multi-camera rendering, and full sensor logging (IMU, joint encoders, actuator forces).
 
-https://github.com/user-attachments/assets/placeholder-video
+Dataset: https://huggingface.co/datasets/ganatrask/pika_sim
 
 ## Setup
 
