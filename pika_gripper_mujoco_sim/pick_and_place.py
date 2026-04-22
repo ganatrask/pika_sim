@@ -71,48 +71,39 @@ def generate_waypoints(pick_x, pick_y, place_x, place_y):
     """Generate smooth pick-and-place waypoints for given pick/place locations."""
     return [
         # Start: home position, gripper open
-        (0.0, 0.0, HOME_Z, GRIPPER_OPEN, 0.5, "Start at home"),
+        (0.0, 0.0, HOME_Z, GRIPPER_OPEN, 0.3, "Start at home"),
 
-        # Approach: move above pick location with a slight arc
-        (pick_x * 0.5, pick_y * 0.5, HOVER_Z * 0.5, GRIPPER_OPEN, 1.2, "Begin approach"),
-        (pick_x, pick_y, HOVER_Z, GRIPPER_OPEN, 1.0, "Above pick location"),
+        # Approach: move above pick location
+        (pick_x, pick_y, HOVER_Z, GRIPPER_OPEN, 0.8, "Above pick location"),
 
-        # Descend to cube — slower, careful approach
-        (pick_x, pick_y, GRASP_Z + 0.02, GRIPPER_OPEN, 1.0, "Descend near cube"),
-        (pick_x, pick_y, GRASP_Z, GRIPPER_OPEN, 0.8, "At grasp height"),
+        # Descend to cube
+        (pick_x, pick_y, GRASP_Z + 0.02, GRIPPER_OPEN, 0.5, "Descend near cube"),
+        (pick_x, pick_y, GRASP_Z, GRIPPER_OPEN, 0.4, "At grasp height"),
 
-        # Grasp: gradual close
-        (pick_x, pick_y, GRASP_Z, -0.02, 0.6, "Begin closing"),
-        (pick_x, pick_y, GRASP_Z, -0.035, 0.4, "Fingers contact cube"),
-        (pick_x, pick_y, GRASP_Z, GRIPPER_CLOSED, 0.8, "Secure grasp"),
+        # Grasp — gripper snaps closed (step function, not interpolated)
+        (pick_x, pick_y, GRASP_Z, GRIPPER_CLOSED, 0.4, "Grasp"),
 
         # Brief pause — settling the grip
-        (pick_x, pick_y, GRASP_Z, GRIPPER_CLOSED, 0.3, "Grip settled"),
+        (pick_x, pick_y, GRASP_Z, GRIPPER_CLOSED, 0.2, "Grip settled"),
 
         # Lift
-        (pick_x, pick_y, GRASP_Z + 0.05, GRIPPER_CLOSED, 0.6, "Begin lift"),
-        (pick_x, pick_y, HOVER_Z, GRIPPER_CLOSED, 0.8, "Lifted to transit height"),
+        (pick_x, pick_y, HOVER_Z, GRIPPER_CLOSED, 0.6, "Lifted to transit height"),
 
-        # Transit with arc
-        (pick_x * 0.3 + place_x * 0.7, pick_y * 0.3 + place_y * 0.7,
-         HOVER_Z - 0.02, GRIPPER_CLOSED, 1.5, "Transit mid-point"),
-        (place_x, place_y, HOVER_Z, GRIPPER_CLOSED, 1.2, "Above place location"),
+        # Transit
+        (place_x, place_y, HOVER_Z, GRIPPER_CLOSED, 0.8, "Above place location"),
 
         # Descend to place
-        (place_x, place_y, GRASP_Z + 0.03, GRIPPER_CLOSED, 1.0, "Descend to place"),
-        (place_x, place_y, GRASP_Z, GRIPPER_CLOSED, 0.6, "At place height"),
+        (place_x, place_y, GRASP_Z + 0.03, GRIPPER_CLOSED, 0.5, "Descend to place"),
+        (place_x, place_y, GRASP_Z, GRIPPER_CLOSED, 0.3, "At place height"),
 
         # Release
-        (place_x, place_y, GRASP_Z, -0.03, 0.4, "Begin release"),
-        (place_x, place_y, GRASP_Z, GRIPPER_OPEN, 0.5, "Fingers open"),
+        (place_x, place_y, GRASP_Z, GRIPPER_OPEN, 0.4, "Release"),
 
         # Retract
-        (place_x, place_y, GRASP_Z + 0.03, GRIPPER_OPEN, 0.5, "Clear cube"),
-        (place_x, place_y, HOVER_Z, GRIPPER_OPEN, 0.8, "Retracted up"),
+        (place_x, place_y, HOVER_Z, GRIPPER_OPEN, 0.5, "Retracted up"),
 
         # Return home
-        (place_x * 0.3, place_y * 0.3, HOVER_Z * 0.6, GRIPPER_OPEN, 1.2, "Returning"),
-        (0.0, 0.0, HOME_Z, GRIPPER_OPEN, 1.0, "Home"),
+        (0.0, 0.0, HOME_Z, GRIPPER_OPEN, 0.8, "Home"),
     ]
 
 
@@ -292,9 +283,11 @@ class SmoothController:
             target = np.array([next_wp[0], next_wp[1], next_wp[2], next_wp[3]])
             t = 0.0
 
-        # Smooth interpolation
-        state = lerp(self.prev_state, target, t)
-        return state[0], state[1], state[2], state[3]
+        # Smooth interpolation for xyz, step function for gripper
+        smooth_t = smoother_step(t)
+        xyz = self.prev_state[:3] + (target[:3] - self.prev_state[:3]) * smooth_t
+        grip = target[3]  # gripper snaps to target immediately
+        return xyz[0], xyz[1], xyz[2], grip
 
 
 def new_cycle(model, data, rng, speed):

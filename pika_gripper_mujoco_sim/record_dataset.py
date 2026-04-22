@@ -54,7 +54,7 @@ from pick_and_place import (
 )
 
 # Constants
-RECORD_HZ = 50
+RECORD_HZ = 20
 MAX_GAP = 0.087  # gripper max opening in meters
 GRIPPER_QUAT_WXYZ = np.array([0.707107, 0.0, 0.707107, 0.0], dtype=np.float32)
 SUCCESS_THRESHOLD = 0.02  # 20mm
@@ -99,7 +99,7 @@ class EpisodeRecorder:
     def _get_gripper_width(self, data):
         pos_grip = self._read_sensor(data, "gripper_sensor")[0]
         width = MAX_GAP + pos_grip * 2  # pos_grip is negative when closing
-        return max(0.0, width)
+        return np.clip(width, 0.0, MAX_GAP)
 
     def _get_ee_pos(self, data):
         """Get end-effector world position from gantry joint sensors."""
@@ -119,6 +119,12 @@ class EpisodeRecorder:
         self.renderer.update_scene(data, camera=self.cam_id)
         return self.renderer.render().copy()  # (H, W, 3) uint8 RGB
 
+    def _ctrl_to_world(self, ctrl_xyz):
+        """Convert gantry control (joint) coordinates to world frame."""
+        x, y, z = ctrl_xyz
+        # Same transform as _get_ee_pos: gantry base at z=0.75, gripper offset -0.1
+        return np.array([x, y, 0.75 + z - 0.1], dtype=np.float32)
+
     def record_step(self, data, ctrl_xyz, ctrl_grip):
         """Record a single timestep if enough time has passed."""
         if data.time - self.last_record_time < self.record_interval:
@@ -129,9 +135,9 @@ class EpisodeRecorder:
             self.start_time = data.time
 
         # --- Actions ---
-        # ee_pose action: target xyz + fixed quaternion
+        # ee_pose action: target xyz in world frame + fixed quaternion
         action_ee = np.concatenate([
-            np.array(ctrl_xyz, dtype=np.float32),
+            self._ctrl_to_world(ctrl_xyz),
             GRIPPER_QUAT_WXYZ,
         ])
         self.actions_ee.append(action_ee)
@@ -251,6 +257,12 @@ def run_episode(model, data, rng, speed):
         "gripper_max_width_m": MAX_GAP,
         "sim_timestep": model.opt.timestep,
         "record_hz": RECORD_HZ,
+        "conventions": {
+            "action_frame": "world_absolute",
+            "obs_frame": "world_absolute",
+            "quaternion": "constant_wxyz_no_rotation_dof",
+            "gripper_action": "0=open_1=closed",
+        },
     }
 
     return recorder, env_state, success, error
