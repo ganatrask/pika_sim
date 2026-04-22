@@ -78,6 +78,8 @@
           <joint name="slide_z" type="slide" axis="0 0 1" range="-0.4 0" damping="50" armature="0.05"/>
           <inertial pos="0 0 0" mass="0.3" diaginertia="1e-4 1e-4 1e-4"/>
 
+          <!-- Wrist cameras moved to gripper_base_link body below -->
+
           <!-- Real Pika Gripper (rotated: local X → world -Z, pointing down) -->
           <body name="gripper_base_link" pos="0 0 -0.1" euler="0 1.5708 0">
             <inertial pos="0.037477 0 0.0084053" mass="0.18972"
@@ -96,27 +98,21 @@
                  Camera -Z axis = look direction. To look DOWN: euler="0 -1.5708 0"
                  Mesh rbound=0.079m, so cameras at local X < -0.09 clear the body -->
 
-            <!-- USB Fisheye Camera
-                 Mounted on TOP of gripper body (local -X = world +Z = above)
-                 Far enough to clear mesh, looking straight down through finger gap
-                 Real specs: 640x480, ~170° diagonal FOV -->
-            <camera name="fisheye" pos="-0.10 0 0" euler="0 -1.5708 0"
-                    fovy="140" resolution="640 480"/>
-
-            <!-- Intel RealSense D405 (Depth + Color)
-                 Mounted on top of gripper, further from body to avoid seeing mesh
-                 Slightly tilted forward to see workspace below fingers
-                 Real specs: 640x480, fx/fy~383 → vfov ≈ 64° -->
-            <camera name="realsense_d405" pos="-0.12 0 0.01" euler="0 -1.5708 0"
-                    fovy="64" resolution="640 480"/>
-
-            <!-- Wrist camera: mounted above and to the side
-                 Angled to see both the gripper fingers and workspace below
-                 Uses xyaxes to precisely control look direction in local frame:
-                 cam X-axis = local Y (horizontal), cam Y-axis points mostly -X with some +Z (up-forward) -->
-            <camera name="wrist_cam" pos="-0.06 0.10 -0.02"
-                    euler="0.3 -1.3 0.3"
-                    fovy="80" resolution="640 480"/>
+            <!-- Wrist cameras: between the fingers, looking down at workspace
+                 gripper_base mesh extends X=0.0 to X=0.086 in body frame
+                 Finger bodies at body X=0.0815, pads at X≈0.127
+                 Camera at X=0.10: past the base mesh, between finger pads, centered (Y=0)
+                 euler: camera -Z must align with body +X (world -Z = down) -->
+            <!-- Wrist cameras: looking down at workspace with slight forward tilt
+                 pos X=0.10: past gripper base mesh, between finger pads
+                 euler Y=-1.5708: look straight down (body +X = world -Z)
+                 euler Y=-1.85: ~18° forward tilt from straight down -->
+            <camera name="color_left" pos="0.04 0.015 0.006" euler="0 -1.85 0"
+                    fovy="87" resolution="640 480"/>
+            <camera name="color_right" pos="0.04 -0.015 0.006" euler="0 -1.85 0"
+                    fovy="87" resolution="640 480"/>
+            <camera name="realsense_d405" pos="0.0710 0.0040 -0.0190" euler="0 -1.4790 0"
+                    fovy="97" resolution="640 480"/>
 
             <!-- Left finger -->
             <body name="gripper_left_link" pos="0.0815 0.08851 0.0064182">
@@ -126,13 +122,6 @@
                      damping="0.1" armature="0.001"/>
               <!-- Finger mesh with collision enabled -->
               <geom name="gripper_left_vis" type="mesh" mesh="gripper_left_link" material="gripper_mat"
-                    contype="3" conaffinity="3"/>
-              <!-- Inner grip pad at fingertip for cube contact
-                   pos X=0.045 puts it near the tip (world -Z = 45mm below finger body)
-                   This is where the finger actually touches the cube -->
-              <geom name="left_pad" type="box" size="0.01 0.003 0.012"
-                    pos="0.045 -0.045 0" material="finger_mat"
-                    friction="5.0 0.05 0.01" solref="0.005 1"
                     contype="3" conaffinity="3"/>
             </body>
 
@@ -144,11 +133,6 @@
                      damping="0.1" armature="0.001"/>
               <!-- Finger mesh with collision enabled -->
               <geom name="gripper_right_vis" type="mesh" mesh="gripper_right_link" material="gripper_mat"
-                    contype="3" conaffinity="3"/>
-              <!-- Inner grip pad at fingertip -->
-              <geom name="right_pad" type="box" size="0.01 0.003 0.012"
-                    pos="0.045 0.045 0" material="finger_mat"
-                    friction="5.0 0.05 0.01" solref="0.005 1"
                     contype="3" conaffinity="3"/>
             </body>
           </body>

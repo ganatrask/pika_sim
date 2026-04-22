@@ -211,9 +211,15 @@ class SensorLogger:
         orientation = self._read(data, "imu_orientation")
 
         # Gripper: convert slide (m) to angle (rad) and distance (m) like real hardware
-        # Real gripper: slide range -0.05..0 maps to distance 0..0.098m, angle 0..1.67rad
-        grip_distance = abs(pos_grip) * 2  # symmetric fingers
-        grip_angle = abs(pos_grip) / 0.05 * 1.67  # linear approx
+        # Sim joint: 0 = fully open, -0.05 = fully closed
+        # Real gripper: distance = finger gap (0.098m open, 0m closed), angle (0 open, 1.67 closed)
+        # Left finger body is at Y=+0.08851, pad at Y_offset=-0.045 → pad Y = 0.04351
+        # Right finger body at Y=-0.088529, pad at Y_offset=+0.045 → pad Y = -0.04353
+        # Rest gap between pads = 0.04351 + 0.04353 = 0.08704m (~87mm)
+        max_gap = 0.087  # finger pad gap when joint=0 (open)
+        grip_distance = max_gap + pos_grip * 2  # pos_grip is negative when closing, *2 for symmetric
+        grip_distance = max(0.0, grip_distance)
+        grip_angle = (1.0 - grip_distance / max_gap) * 1.67  # 0 open → 1.67 closed
 
         # Cube position
         cube_pos = self._read(data, "cube_pos")
