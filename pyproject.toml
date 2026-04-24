@@ -11,17 +11,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Install the inference client for running eval scripts.
-# If robot-inference is cloned locally, install with:
-#   pip install -e /path/to/robot-inference/client[act]
 eval = [
     "pyzmq",
     "msgpack",
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = []
+[tool.setuptools]
+py-modules = []
