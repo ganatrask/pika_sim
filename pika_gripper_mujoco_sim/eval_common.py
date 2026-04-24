@@ -32,10 +32,50 @@ try:
 except ImportError:
     cv2 = None
 
-from robot_inference_client import get_client, InferenceObservation, InferenceAction
+def _setup_inference_client():
+    """Auto-discover robot_inference_client if not pip-installed.
+
+    Walks up from this file and checks for robot-inference as a sibling
+    directory at each level. Supports layouts like:
+
+      sim_eval/pika_sim/  + sim_eval/robot-inference/     (sibling repos)
+      pika_ros/sim/       + pika_ros/../robot-inference/   (within pika_ros)
+      cc/pika/pika_ros/   + cc/robot-inference/            (monorepo)
+    """
+    try:
+        import robot_inference_client  # noqa: F401
+        return  # already importable
+    except ImportError:
+        pass
+
+    import sys
+    from pathlib import Path
+    # Walk up from pika_gripper_mujoco_sim/ checking each parent for
+    # a sibling robot-inference/client/src directory
+    current = Path(__file__).resolve().parent
+    search_paths = []
+    for _ in range(5):  # check up to 5 levels
+        current = current.parent
+        candidate = current / "robot-inference" / "client" / "src"
+        search_paths.append(candidate)
+    for p in search_paths:
+        if (p / "robot_inference_client").is_dir():
+            sys.path.insert(0, str(p))
+            return
+
+    raise ImportError(
+        "robot_inference_client not found. Either:\n"
+        "  1. pip install -e /path/to/robot-inference/client[act]\n"
+        "  2. Clone robot-inference as a sibling directory\n"
+        "  3. Set PYTHONPATH=/path/to/robot-inference/client/src"
+    )
+
+_setup_inference_client()
+
+from robot_inference_client import get_client, InferenceObservation, InferenceAction  # noqa: E402
 
 # Re-export for convenience
-from pick_and_place import randomize_cube, read_cube_xy
+from pick_and_place import randomize_cube, read_cube_xy  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -2,14 +2,55 @@
 
 MuJoCo simulation environments for robotic gripper pick-and-place tasks. Includes two gripper models — the [Agilex Pika](https://github.com/agilexrobotics) and the [Trossen WXAI](https://www.trossenrobotics.com/) — each with a 3-DOF Cartesian gantry, multi-camera rendering, sensor logging, and dataset recording for imitation learning.
 
-## Requirements
+## Environment Setup
 
-- Python 3.10+
-- MuJoCo >= 3.0
+### Option A: conda (recommended)
 
 ```bash
-pip install mujoco numpy opencv-python h5py
+# Python 3.11+ required by robot-inference-client
+conda create -n gripper_sim python=3.11 -y
+conda activate gripper_sim
+
+# Install sim + eval dependencies
+pip install -e ".[eval]"
+
+# Install robot-inference client (needed for eval scripts)
+pip install -e "../robot-inference/client[act]"
 ```
+
+### Option B: uv
+
+```bash
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+
+uv pip install -e ".[eval]"
+uv pip install -e "../robot-inference/client[act]"
+```
+
+### Verify installation
+
+```bash
+python -c "import mujoco, h5py, cv2, robot_inference_client; print('All dependencies OK')"
+```
+
+### Directory layout
+
+Both repos should be cloned as siblings:
+
+```
+your_workspace/
+├── pika_sim/             # this repo (git@github.com:ganatrask/pika_sim.git)
+│   ├── pyproject.toml
+│   ├── pika_gripper_mujoco_sim/
+│   └── trossen_gripper_mujoco_sim/
+└── robot-inference/      # inference SDK (client + server)
+    └── client/           # pip install -e "client[act]"
+```
+
+The eval scripts also auto-discover `robot_inference_client` from sibling
+directories without pip-installing it — but `pip install` is recommended for
+a clean reproducible setup.
 
 ## Simulations
 
@@ -95,10 +136,82 @@ Each episode contains:
 | `env_state` | scalar | JSON metadata (cube poses, placement error) |
 | `success` | scalar | True if placement error < 20 mm |
 
+## Policy Evaluation
+
+Evaluate trained ACT VAE policies against the MuJoCo simulation. Requires a running inference server on a GPU machine.
+
+### Architecture
+
+```
+┌──────────────────────────────┐       ┌──────────────────────────────┐
+│  This machine (eval)         │       │  GPU machine (inference)     │
+│                              │       │                              │
+│  MuJoCo sim                  │  ZMQ  │  Trained ACT checkpoint      │
+│    ├─ render camera → image ─┼──────>│    ├─ normalize qpos         │
+│    ├─ read sensors  → qpos  ─┼──────>│    ├─ model forward pass     │
+│    └─ apply action <─────────┼───────┤    └─ denormalize action     │
+│                              │       │                              │
+│  eval_closed_loop.py         │       │  robot-inference server      │
+└──────────────────────────────┘       └──────────────────────────────┘
+```
+
+### Start inference server (GPU machine)
+
+```bash
+cd robot-inference/server
+uv run --extra act serve --backend act \
+    --checkpoint /path/to/act_vae_pick_and_place_pika_sim_v0 \
+    --checkpoint-step 25000 \
+    --port 5556
+```
+
+### Run evaluation (eval machine)
+
+```bash
+cd pika_gripper_mujoco_sim
+
+# Open-loop: replay recorded episodes, compare predictions to ground truth
+python eval_open_loop.py \
+    --dataset ./dataset \
+    --backend act \
+    --url tcp://<gpu-machine>:5556 \
+    --gripper pika \
+    --max-episodes 20
+
+# Closed-loop: policy drives the MuJoCo sim
+python eval_closed_loop.py \
+    --gripper pika \
+    --backend act \
+    --url tcp://<gpu-machine>:5556 \
+    --episodes 50 --seed 42 \
+    --save-video
+```
+
+### Eval outputs
+
+- `results_open_loop.json` — per-episode RMSE (position, orientation, gripper accuracy)
+- `results_closed_loop.json` — success rates at 5/20/50 mm, placement error per episode
+- `eval_videos/` — optional MP4 recordings of wrist camera per episode
+
+### Cross-gripper sweep
+
+```bash
+for gripper in pika trossen; do
+    for version in v0 v1; do
+        python eval_closed_loop.py \
+            --gripper $gripper --backend act \
+            --url tcp://<gpu-machine>:5556 \
+            --episodes 50 --seed 42 \
+            --output "results_${gripper}_${version}.json"
+    done
+done
+```
+
 ## Project Structure
 
 ```
 sim/
+├── pyproject.toml                  # Dependencies (pip install -e ".[eval]")
 ├── pika_gripper_mujoco_sim/
 │   ├── run_sim.py                  # Interactive viewer
 │   ├── pick_and_place.py           # Pick-and-place demo
@@ -106,6 +219,9 @@ sim/
 │   ├── camera_viewer.py            # Multi-camera rendering
 │   ├── camera_tuner.py             # Camera parameter tuning
 │   ├── inspect_episode.py          # Episode analysis
+│   ├── eval_common.py              # Eval shared utilities (PikaSimEnv, metrics)
+│   ├── eval_open_loop.py           # Open-loop evaluation
+│   ├── eval_closed_loop.py         # Closed-loop evaluation
 │   ├── pika_gripper.xml            # Standalone gripper
 │   ├── pika_gripper_pickplace.xml  # Pick-and-place environment
 │   ├── pika_sensor.xml             # Sensor head (dual gripper)
@@ -118,5 +234,6 @@ sim/
 │   ├── trossen_gripper.xml         # Standalone gripper
 │   ├── trossen_gripper_pickplace.xml # Pick-and-place environment
 │   └── meshes/                     # 6 STL files
-└── CLAUDE.md
+├── sim_checkpoints/                # Trained checkpoints (git-ignored)
+└── docs/                           # Implementation plans
 ```

@@ -15,5 +15,9 @@ my_dataset/
 # Checkpoints
 sim_checkpoints/
 
+# Eval outputs
+eval_videos/
+results*.json
+
 # Logs
 *.log
