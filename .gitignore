@@ -5,11 +5,15 @@ __pycache__/
 
 # Recorded datasets (episodes, videos)
 dataset/
+my_dataset/
 
 # Video recordings
 *.mp4
 *.avi
 *.webm
+
+# Checkpoints
+sim_checkpoints/
 
 # Logs
 *.log
