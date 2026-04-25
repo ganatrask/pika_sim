@@ -174,9 +174,11 @@ def _get_gripper_width(data, sensor_addrs, base_gap: float, max_gap: float) -> f
 # ---------------------------------------------------------------------------
 
 def build_qpos(ee_pose_7: np.ndarray, gripper_width: float, max_gap: float) -> np.ndarray:
-    """Concat ee_pose (7) + normalized gripper -> (8,). grip_norm: 1=open, 0=closed."""
-    grip_norm = gripper_width / max_gap
-    return np.concatenate([ee_pose_7, [grip_norm]]).astype(np.float32)
+    """Concat ee_pose (7) + raw gripper width in meters -> (8,).
+    Training data uses raw width (0–0.087m), NOT normalized (0–1).
+    The model's norm_stats handle mean-std normalization internally.
+    """
+    return np.concatenate([ee_pose_7, [gripper_width]]).astype(np.float32)
 
 
 def build_action(ee_pose_7: np.ndarray, gripper_01: float) -> np.ndarray:
@@ -219,9 +221,8 @@ def episode_gt_actions(ep: dict) -> np.ndarray:
 
 
 def episode_gt_qpos(ep: dict, max_gap: float) -> np.ndarray:
-    """Ground truth qpos as (T, 8). grip_norm: 1=open."""
-    grip_norm = ep["obs_grip_width"] / max_gap  # (T, 1)
-    return np.concatenate([ep["obs_ee"], grip_norm], axis=1)
+    """Ground truth qpos as (T, 8). grip_width in raw meters (matches training)."""
+    return np.concatenate([ep["obs_ee"], ep["obs_grip_width"]], axis=1)
 
 
 def load_episode_video(dataset_dir, episode_idx: int) -> np.ndarray:
@@ -260,12 +261,59 @@ class OpenLoopMetrics:
     per_joint_rmse: np.ndarray
 
 
+class FailureMode:
+    """Failure classification for pick-and-place episodes."""
+    SUCCESS = "success"             # placed within threshold
+    PICK_FAIL = "pick_fail"         # cube never lifted off table
+    DROP = "drop"                   # cube lifted but dropped before place zone
+    INACCURATE = "inaccurate"       # cube placed but outside threshold
+
+    @staticmethod
+    def classify(cube_max_z: float, cube_final_z: float, placement_error_m: float,
+                 table_z: float = 0.22, lift_threshold: float = 0.01,
+                 success_threshold: float = 0.02) -> str:
+        """Classify failure mode from cube trajectory summary.
+
+        Args:
+            cube_max_z: highest Z the cube reached during episode
+            cube_final_z: cube Z at end of episode
+            placement_error_m: final XY distance to target (meters)
+            table_z: resting Z of cube on table (0.22 for pika)
+            lift_threshold: Z above table_z to count as "lifted" (10mm)
+            success_threshold: XY error for success (20mm)
+        """
+        was_lifted = cube_max_z > (table_z + lift_threshold)
+        on_table_at_end = cube_final_z < (table_z + lift_threshold)
+
+        if placement_error_m < success_threshold:
+            return FailureMode.SUCCESS
+        if not was_lifted:
+            return FailureMode.PICK_FAIL
+        if not on_table_at_end:
+            # Cube is still in the air or fell off — drop
+            return FailureMode.DROP
+        # Cube was lifted and is back on surface, but too far from target
+        return FailureMode.INACCURATE
+
+
+@dataclass
+class CubeTrajectory:
+    """Per-episode cube tracking data."""
+    max_z: float = 0.0              # peak Z reached
+    final_z: float = 0.0            # Z at episode end
+    final_xy: tuple[float, float] = (0.0, 0.0)
+    lift_step: int = -1             # first step cube exceeded lift threshold (-1 = never)
+    drop_step: int = -1             # step cube returned to table after lift (-1 = never)
+
+
 @dataclass
 class ClosedLoopMetrics:
     success: bool
     placement_error_mm: float
     pick_pos: tuple[float, float]
     place_pos: tuple[float, float]
+    failure_mode: str = ""
+    cube_traj: CubeTrajectory = field(default_factory=CubeTrajectory)
 
 
 def compute_action_rmse(preds: np.ndarray, gts: np.ndarray) -> OpenLoopMetrics:
@@ -330,15 +378,30 @@ def print_open_loop_summary(results: list[OpenLoopMetrics]):
           "(1=closed in action space)")
 
 
+def compute_failure_breakdown(results: list[ClosedLoopMetrics]) -> dict[str, int]:
+    """Count episodes per failure mode."""
+    counts = {
+        FailureMode.SUCCESS: 0,
+        FailureMode.PICK_FAIL: 0,
+        FailureMode.DROP: 0,
+        FailureMode.INACCURATE: 0,
+    }
+    for r in results:
+        if r.failure_mode in counts:
+            counts[r.failure_mode] += 1
+    return counts
+
+
 def print_closed_loop_summary(results: list[ClosedLoopMetrics]):
-    """Success rates at 5/20/50mm, mean/std placement error."""
-    print("\n" + "=" * 70)
+    """Success rates at 5/20/50mm, mean/std placement error, failure breakdown."""
+    print("\n" + "=" * 78)
     print("CLOSED-LOOP EVALUATION RESULTS")
-    print("=" * 70)
+    print("=" * 78)
 
     errors = [r.placement_error_mm for r in results]
     n = len(results)
     rates = compute_success_rates(results)
+    breakdown = compute_failure_breakdown(results)
 
     print(f"\nEpisodes: {n}")
     print(f"Success rate (<5mm):  {rates['success_rate_5mm']:.1%}")
@@ -347,12 +410,20 @@ def print_closed_loop_summary(results: list[ClosedLoopMetrics]):
     print(f"Mean placement error: {np.mean(errors):.1f} mm  "
           f"(std: {np.std(errors):.1f} mm)")
 
-    print(f"\n{'Ep':>4s}  {'Error_mm':>9s}  {'Success':>7s}  "
-          f"{'Pick':>18s}  {'Place':>18s}")
-    print("-" * 65)
+    print(f"\nFailure breakdown:")
+    print(f"  success:    {breakdown[FailureMode.SUCCESS]:3d} ({breakdown[FailureMode.SUCCESS]/n:.1%})")
+    print(f"  pick_fail:  {breakdown[FailureMode.PICK_FAIL]:3d} ({breakdown[FailureMode.PICK_FAIL]/n:.1%})")
+    print(f"  drop:       {breakdown[FailureMode.DROP]:3d} ({breakdown[FailureMode.DROP]/n:.1%})")
+    print(f"  inaccurate: {breakdown[FailureMode.INACCURATE]:3d} ({breakdown[FailureMode.INACCURATE]/n:.1%})")
+
+    print(f"\n{'Ep':>4s}  {'Error_mm':>9s}  {'Status':>12s}  "
+          f"{'MaxZ':>6s}  {'Pick':>18s}  {'Place':>18s}")
+    print("-" * 80)
     for i, r in enumerate(results):
-        ok = "OK" if r.success else "FAIL"
-        print(f"{i:4d}  {r.placement_error_mm:9.1f}  {ok:>7s}  "
+        label = r.failure_mode.upper() if r.failure_mode != FailureMode.SUCCESS else "OK"
+        max_z = f"{r.cube_traj.max_z:.3f}" if r.cube_traj else "  -  "
+        print(f"{i:4d}  {r.placement_error_mm:9.1f}  {label:>12s}  "
+              f"{max_z:>6s}  "
               f"({r.pick_pos[0]:+.3f},{r.pick_pos[1]:+.3f})  "
               f"({r.place_pos[0]:+.3f},{r.place_pos[1]:+.3f})")
 
@@ -397,6 +468,8 @@ def results_to_json_closed_loop(results: list[ClosedLoopMetrics], backend: str,
     from datetime import datetime
     errors_mm = [r.placement_error_mm for r in results]
     rates = compute_success_rates(results)
+    breakdown = compute_failure_breakdown(results)
+    n = len(results)
     return {
         "eval_type": "closed_loop",
         "backend": backend,
@@ -405,20 +478,37 @@ def results_to_json_closed_loop(results: list[ClosedLoopMetrics], backend: str,
         "seed": seed,
         "horizon": horizon,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "num_episodes": len(results),
+        "num_episodes": n,
         **extra,
         "aggregated": {
             **rates,
             "mean_placement_error_mm": float(np.mean(errors_mm)),
             "std_placement_error_mm": float(np.std(errors_mm)),
+            "failure_breakdown": {
+                "success": breakdown[FailureMode.SUCCESS],
+                "pick_fail": breakdown[FailureMode.PICK_FAIL],
+                "drop": breakdown[FailureMode.DROP],
+                "inaccurate": breakdown[FailureMode.INACCURATE],
+            },
+            "failure_rates": {
+                "pick_fail": breakdown[FailureMode.PICK_FAIL] / n,
+                "drop": breakdown[FailureMode.DROP] / n,
+                "inaccurate": breakdown[FailureMode.INACCURATE] / n,
+            },
         },
         "per_episode": [
             {
                 "episode_idx": i,
                 "success": r.success,
+                "failure_mode": r.failure_mode,
                 "placement_error_mm": r.placement_error_mm,
                 "pick_pos": list(r.pick_pos),
                 "place_pos": list(r.place_pos),
+                "cube_max_z": r.cube_traj.max_z,
+                "cube_final_z": r.cube_traj.final_z,
+                "cube_final_xy": list(r.cube_traj.final_xy),
+                "lift_step": r.cube_traj.lift_step,
+                "drop_step": r.cube_traj.drop_step,
             }
             for i, r in enumerate(results)
         ],
@@ -459,9 +549,11 @@ class PikaSimEnv:
         self.base_gap = cfg["gripper_base_gap"]
         self.action_grip_to_ctrl = cfg["action_grip_to_ctrl"]
 
-        # Load model
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        xml_path = os.path.join(script_dir, cfg["xml"])
+        # Load model — XML lives in the gripper-specific sim directory
+        # e.g. sim/pika_gripper_mujoco_sim/ or sim/trossen_gripper_mujoco_sim/
+        sim_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        gripper_sim_dir = os.path.join(sim_root, f"{gripper}_gripper_mujoco_sim")
+        xml_path = os.path.join(gripper_sim_dir, cfg["xml"])
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
 
@@ -482,15 +574,15 @@ class PikaSimEnv:
         return randomize_cube(self.model, self.data, rng)
 
     def get_qpos(self) -> np.ndarray:
-        """Read sensors -> 8D qpos [x,y,z, qw,qx,qy,qz, grip_norm].
-        grip_norm: 1=open, 0=closed (matches training obs convention).
+        """Read sensors -> 8D qpos [x,y,z, qw,qx,qy,qz, grip_width_m].
+        grip_width_m: raw gripper width in meters (0–0.087m), matching
+        the training data format (NOT normalized 0–1).
         """
         ee_pos = _get_ee_pos(self.data, self._sensor_addrs)
         ee_pose = np.concatenate([ee_pos, GRIPPER_QUAT_WXYZ])
         width = _get_gripper_width(self.data, self._sensor_addrs,
                                    self.base_gap, self.max_gap)
-        grip_norm = width / self.max_gap
-        return np.concatenate([ee_pose, [grip_norm]]).astype(np.float32)
+        return np.concatenate([ee_pose, [width]]).astype(np.float32)
 
     def render_cameras(self) -> dict[str, np.ndarray]:
         """Render configured cameras. Returns {canonical_name: (H,W,3) uint8}.
@@ -519,6 +611,12 @@ class PikaSimEnv:
         self.data.ctrl[3] = self.action_grip_to_ctrl(action_8d[7])
         for _ in range(50):
             mujoco.mj_step(self.model, self.data)
+
+    def read_cube_xyz(self) -> tuple[float, float, float]:
+        """Read current cube XYZ position from simulation."""
+        cube_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+        pos = self.data.xpos[cube_body_id]
+        return float(pos[0]), float(pos[1]), float(pos[2])
 
     def compute_placement_error(self, place_x: float, place_y: float) -> float:
         """Cube-to-target XY distance in meters."""

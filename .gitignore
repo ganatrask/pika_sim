@@ -17,6 +17,7 @@ sim_checkpoints/
 
 # Eval outputs
 eval_videos/
+eval_runs/
 results*.json
 
 # Logs

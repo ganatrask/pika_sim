@@ -27,7 +27,7 @@ source .venv/bin/activate
 uv pip install -e ".[eval]"
 uv pip install -e "../robot-inference/client[act]"
 ```
-
+/home/shyam/projects/cc/robot-inference/client
 ### Verify installation
 
 ```bash
