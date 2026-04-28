@@ -27,7 +27,7 @@ source .venv/bin/activate
 uv pip install -e ".[eval]"
 uv pip install -e "../robot-inference/client[act]"
 ```
-/home/shyam/projects/cc/robot-inference/client
+
 ### Verify installation
 
 ```bash
@@ -207,6 +207,99 @@ for gripper in pika trossen; do
 done
 ```
 
+## Full Eval Matrix (`run_all_evals.sh`)
+
+`run_all_evals.sh` automates running every model, checkpoint step, and gripper combination end-to-end. For each combo it starts an inference server, runs 50 closed-loop episodes, kills the server, and moves on.
+
+### Prerequisites
+
+- Checkpoints in `sim_checkpoints/` (git-ignored), organized as:
+  ```
+  sim_checkpoints/
+  ├── act_vae_pick_and_place_pika_sim_v0/
+  │   ├── policy_step_5000.ckpt
+  │   ├── policy_step_10000.ckpt
+  │   └── ...
+  ├── act_vae_pick_and_place_trossen_sim_v1/
+  └── ...
+  ```
+- `robot-inference` server and client repos at their expected paths
+- `model-playground` venv with torch + ML deps
+
+### Models in the matrix
+
+| Short name | Checkpoint directory | Training data |
+|---|---|---|
+| `pika_v0` | `act_vae_pick_and_place_pika_sim_v0` | Pika-only |
+| `pika_v1` | `act_vae_pick_and_place_pika_sim_v1` | Pika-only |
+| `trossen_v0` | `act_vae_pick_and_place_trossen_sim_v0` | Trossen-only |
+| `trossen_v1` | `act_vae_pick_and_place_trossen_sim_v1` | Trossen-only |
+| `mix_95t_5p_v0` | `act_vae_pick_and_place_95_trossen_5_pika_sim_v0` | 95% Trossen + 5% Pika |
+| `mix_95t_5p_v1` | `act_vae_pick_and_place_95_trossen_5_pika_sim_v1` | 95% Trossen + 5% Pika |
+
+Each model is evaluated at steps `5000 10000 15000 20000 25000` (mix models also include `last`), against both `pika` and `trossen` grippers — 52 combinations total.
+
+### Usage
+
+```bash
+# Preview what would run (no execution)
+./run_all_evals.sh --dry-run
+
+# Run everything
+./run_all_evals.sh
+
+# Resume after interruption (skips runs that already have results.json)
+./run_all_evals.sh --resume
+
+# Only run combos matching a filter
+./run_all_evals.sh --filter "pika_v0"
+./run_all_evals.sh --filter "trossen"
+./run_all_evals.sh --filter "step_25000"
+```
+
+### What each run does
+
+1. Starts the inference server with the checkpoint + step
+2. Waits for the server to be ready (up to 5 min for CUDA init)
+3. Runs `eval_closed_loop.py` (50 episodes, seed 701, horizon 180)
+4. Kills the server
+5. Writes `note.txt` with run metadata
+
+### Output structure
+
+Results go to `pika_gripper_mujoco_sim/eval_runs_matrix/`:
+
+```
+eval_runs_matrix/
+├── pika_v0__step_5000__pika/
+│   ├── results.json        # Success rates, placement errors, failure breakdown
+│   ├── note.txt            # Run metadata (model, step, gripper, timing)
+│   ├── server.log          # Inference server stdout/stderr
+│   ├── eval.log            # eval_closed_loop.py output
+│   └── videos/             # Per-episode wrist cam MP4s (if --save-video)
+├── pika_v0__step_5000__trossen/
+├── ...
+├── master_log.txt          # One-line status per run (OK/FAIL + summary)
+└── summary.csv             # Aggregated table of all results
+```
+
+### Reading results
+
+The `summary.csv` contains one row per run with success rates and error metrics:
+
+```
+model,step,gripper,success_50mm,success_20mm,success_5mm,mean_error_mm,std_error_mm,pick_fail,drop,inaccurate
+pika_v0,5000,pika,0.820,0.640,0.120,18.3,22.1,0.080,0.040,0.040
+...
+```
+
+Key metrics:
+- **success@50mm / @20mm / @5mm** — fraction of episodes where cube placement error is below threshold
+- **mean_error_mm** — average placement error across all episodes
+- **pick_fail** — fraction where the gripper failed to pick up the cube
+- **drop** — fraction where the cube was picked but dropped before placement
+- **inaccurate** — fraction where the cube was placed but outside the 50mm threshold
+
 ## Project Structure
 
 ```
@@ -234,6 +327,8 @@ sim/
 │   ├── trossen_gripper.xml         # Standalone gripper
 │   ├── trossen_gripper_pickplace.xml # Pick-and-place environment
 │   └── meshes/                     # 6 STL files
+├── run_all_evals.sh                # Run all model×checkpoint×gripper eval combinations
 ├── sim_checkpoints/                # Trained checkpoints (git-ignored)
 └── docs/                           # Implementation plans
 ```
+
